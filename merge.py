@@ -2,9 +2,8 @@
 import argparse
 import curses
 import json
-from Levenshtein import distance
 import pathlib
-import sys
+from Levenshtein import distance
 import pandas as pd
 import npyscreen
 from mailmerge import MailMerge
@@ -15,6 +14,9 @@ parser.add_argument('templates', type=pathlib.Path, nargs='+',
 parser.add_argument('-x', '--xlsx', required=True, type=pathlib.Path,
                     help="XLSX file")
 
+ENTRY_LABEL_OFFSET=30
+
+template_by = None
 key_mapping = {}
 template_mapping = {}
 
@@ -25,28 +27,31 @@ class MyTestApp(npyscreen.NPSAppManaged):
     def onStart(self):
         self.registerForm("MAIN", MainForm())
         self.registerForm("TEMPLATES", TemplatesForm())
+        self.registerForm("OUTPUT", OutputForm())
 
 
-class MainForm(npyscreen.SplitForm):
+class MainForm(npyscreen.Form):
     """This form that will be presented to the user."""
 
     def create(self):
         """Create the form."""
-        self.name = "Define the template"
-        self.draw_line_at = 4
+        self.name = "Map template on the data"
         self.add(
                 npyscreen.TitleText,
+                begin_entry_at=ENTRY_LABEL_OFFSET,
                 editable=False,
                 name="XLSX file",
                 value=args.xlsx.name
                 )
         self.add(
                 npyscreen.TitleCombo,
+                begin_entry_at=ENTRY_LABEL_OFFSET,
                 maxlen=1,
                 name="Select template by",
                 values=list(df.keys()),
                 scroll_exit=False,
                 )
+        self.nextrely += 1
 
         for field in fields:
             # find the edit distance to each column
@@ -54,6 +59,7 @@ class MainForm(npyscreen.SplitForm):
 
             self.add(
                 npyscreen.TitleCombo,
+                begin_entry_at=ENTRY_LABEL_OFFSET,
                 maxlen=1,
                 name=field,
                 value=distances.index(min(distances)),
@@ -71,26 +77,8 @@ class MainForm(npyscreen.SplitForm):
         template_by_widget = self.get_widget(1)
         template_by_idx = template_by_widget.get_value()
         if template_by_idx is not None:
+            global template_by
             template_by = template_by_widget.get_values()[template_by_idx]
-
-            # find the possible values the template_by key takes
-            values_to_map = list(set(df[template_by]))
-            values_to_map.sort(key=lambda x: str(x))
-
-            # add a value -> template combobox per value to the next form
-            form = self.parentApp.getForm("TEMPLATES")
-            for name in values_to_map:
-                # find the edit distance to each template
-                distances = [distance(name, t.name) for t in args.templates]
-
-                form.add(
-                    npyscreen.TitleCombo,
-                    maxlen=1,
-                    name=str(name),
-                    value=distances.index(min(distances)),
-                    values=[t.name for t in args.templates],
-                    scroll_exit=False,
-                )
 
             # move to the next form
             self.parentApp.setNextForm("TEMPLATES")
@@ -103,11 +91,41 @@ class TemplatesForm(npyscreen.Form):
 
     def create(self):
         """Create the form."""
+        self.name = "Template selection"
         self.add_handlers({curses.KEY_DC: self.wipe_value})
+
+    def beforeEditing(self):
+        global template_by
+        # find the possible values the template_by key takes
+        values_to_map = list(set(df[template_by]))
+        values_to_map.sort(key=lambda x: str(x))
+
+        self.add(
+                npyscreen.TitleText,
+                begin_entry_at=ENTRY_LABEL_OFFSET,
+                editable=False,
+                name=template_by,
+                value="Template file"
+                )
+
+        for name in values_to_map:
+            # find the edit distance to each template
+            distances = [distance(name, t.name) for t in args.templates]
+
+            self.add(
+                npyscreen.TitleCombo,
+                maxlen=1,
+                begin_entry_at=ENTRY_LABEL_OFFSET,
+                name=str(name),
+                value=distances.index(min(distances)),
+                values=[t.name for t in args.templates],
+                scroll_exit=False,
+            )
+
 
     def afterEditing(self):
         """When 'OK' is pressed."""
-        for widget in self._widgets__:
+        for widget in self._widgets__[1:]:
             idx = widget.get_value()
             if idx is not None:
                 value = widget.get_values()[idx]
@@ -115,11 +133,28 @@ class TemplatesForm(npyscreen.Form):
             else:
                 template_mapping[widget.name] = None
 
-        self.parentApp.setNextForm(None)
+        self.parentApp.setNextForm("OUTPUT")
 
     def wipe_value(self, _):
         widget = self.get_widget(self.editw)
         widget.set_value(None)
+
+
+class OutputForm(npyscreen.Form):
+    """This form that will be presented to the user."""
+
+    def create(self):
+        """Create the form."""
+        self.name = "Output"
+        self.add_handlers({curses.KEY_DC: self.wipe_value})
+
+    def wipe_value(self, _):
+        widget = self.get_widget(self.editw)
+        widget.set_value(None)
+
+    def afterEditing(self):
+        """When 'OK' is pressed."""
+        self.parentApp.setNextForm(None)
 
 
 if __name__ == "__main__":
