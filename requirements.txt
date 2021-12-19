@@ -1,0 +1,4 @@
+docx-mailmerge
+openpyxl
+pandas
+python-Levenshtein
