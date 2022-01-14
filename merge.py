@@ -11,10 +11,12 @@ from mailmerge import MailMerge
 parser = argparse.ArgumentParser(description='docx/xlsx Merge tool.')
 parser.add_argument('templates', type=pathlib.Path, nargs='+',
                     help='DOCX templates to merge')
-parser.add_argument('-x', '--xlsx', required=True, type=pathlib.Path,
-                    help="XLSX file")
 
-ENTRY_LABEL_OFFSET=30
+group = parser.add_mutually_exclusive_group(required=True)
+group.add_argument('-x', '--xlsx', type=pathlib.Path, help="XLSX file")
+group.add_argument('-c', '--csv',  type=pathlib.Path, help="CSV file")
+
+ENTRY_LABEL_OFFSET = 30
 
 template_by = None
 key_mapping = {}
@@ -40,22 +42,22 @@ class MainForm(npyscreen.Form):
                 npyscreen.TitleText,
                 begin_entry_at=ENTRY_LABEL_OFFSET,
                 editable=False,
-                name="XLSX file",
-                value=args.xlsx.name
+                name="Data file",
+                value=source_name
                 )
         self.add(
                 npyscreen.TitleCombo,
                 begin_entry_at=ENTRY_LABEL_OFFSET,
                 maxlen=1,
                 name="Select template by",
-                values=list(df.keys()),
+                values=list(source_df.keys()),
                 scroll_exit=False,
                 )
         self.nextrely += 1
 
         for field in fields:
             # find the edit distance to each column
-            distances = [distance(field, column) for column in df.columns]
+            distances = [distance(field, column) for column in source_df.columns]
 
             self.add(
                 npyscreen.TitleCombo,
@@ -63,7 +65,7 @@ class MainForm(npyscreen.Form):
                 maxlen=1,
                 name=field,
                 value=distances.index(min(distances)),
-                values=list(df.columns),
+                values=list(source_df.columns),
                 scroll_exit=False,
             )
         self.add_handlers({curses.KEY_DC: self.wipe_value})
@@ -97,7 +99,7 @@ class TemplatesForm(npyscreen.Form):
     def beforeEditing(self):
         global template_by
         # find the possible values the template_by key takes
-        values_to_map = list(set(df[template_by]))
+        values_to_map = list(set(source_df[template_by]))
         values_to_map.sort(key=lambda x: str(x))
 
         self.add(
@@ -121,7 +123,6 @@ class TemplatesForm(npyscreen.Form):
                 values=[t.name for t in args.templates],
                 scroll_exit=False,
             )
-
 
     def afterEditing(self):
         """When 'OK' is pressed."""
@@ -160,10 +161,12 @@ class OutputForm(npyscreen.Form):
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    df = pd.read_excel(args.xlsx)
-    rows, cols = df.shape
-
-    # df.keys() fields in the XLSX to use
+    if args.xlsx:
+        source_df = pd.read_excel(args.xlsx)
+        source_name = str(args.xlsx)
+    elif args.csv:
+        source_df = pd.read_csv(args.csv)
+        source_name = str(args.csv)
 
     # column 'BCO ' => 'ACCEPT', 'REJECT'
     sfields = set()
