@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import argparse
 import curses
+import chevron
 import json
 import pathlib
 from Levenshtein import distance
@@ -9,8 +10,10 @@ import npyscreen
 from mailmerge import MailMerge
 
 parser = argparse.ArgumentParser(description='docx/xlsx Merge tool.')
+parser.add_argument('-t', '--type', choices=['xlsx', 'mustache'],
+                    default='xlsx', help="Template language")
 parser.add_argument('templates', type=pathlib.Path, nargs='+',
-                    help='DOCX templates to merge')
+                    help='templates to merge')
 
 group = parser.add_mutually_exclusive_group(required=True)
 group.add_argument('-x', '--xlsx', type=pathlib.Path, help="XLSX file")
@@ -171,11 +174,19 @@ if __name__ == "__main__":
     # column 'BCO ' => 'ACCEPT', 'REJECT'
     sfields = set()
 
-    for template in args.templates:
-        mm = MailMerge(template)
-        mf = mm.get_merge_fields()
-        for f in mf:
-            sfields.add(f)
+    if args.type == 'xlsx':
+        for template in args.templates:
+            mm = MailMerge(template)
+            mf = mm.get_merge_fields()
+            for f in mf:
+                sfields.add(f)
+    elif args.type == 'mustache':
+        for template in args.templates:
+            with open(template, 'r') as f:
+                tokenizer = chevron.tokenizer.tokenize(f)
+                for m_type, m_name in tokenizer:
+                    if m_type == 'variable':
+                        sfields.add(m_name)
 
     fields = list(sfields)
     fields.sort()
